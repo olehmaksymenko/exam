@@ -1,0 +1,35 @@
+x = linspace(-10, 10, 500);
+
+% 1. Основна одностороння сигмоїда (стандартна логістична)
+sigma1 = 1 ./ (1 + exp(-x));
+
+% 2. Відкрита зліва (дзеркально відображена)
+sigma_left = 1 - 1 ./ (1 + exp(-x));
+
+% 3. Додаткова двостороння (tanh, симетрична)
+sigma2 = tanh(x);
+
+% 4. Додаткова несиметрична (зміщений центр + різний нахил)
+sigma3 = 1 ./ (1 + exp(-0.5 .* (x - 2)));
+
+figure('Name', 'Sigmoid Functions', 'Color', 'white');
+hold on;
+
+plot(x, sigma1,    'b-',  'LineWidth', 2, 'DisplayName', 'Одностороння (відкрита справа)');
+plot(x, sigma_left,'r--', 'LineWidth', 2, 'DisplayName', 'Одностороння (відкрита зліва)');
+plot(x, sigma2,    'g-',  'LineWidth', 2, 'DisplayName', 'Двостороння (tanh)');
+plot(x, sigma3,    'm:',  'LineWidth', 2.5,'DisplayName', 'Несиметрична (зміщена)');
+
+yline(0, 'k--', 'Alpha', 0.3);
+yline(1, 'k--', 'Alpha', 0.3);
+yline(-1,'k--', 'Alpha', 0.3);
+xline(0, 'k--', 'Alpha', 0.3);
+
+xlabel('x', 'FontSize', 13);
+ylabel('\sigma(x)', 'FontSize', 13);
+title('Набір сигмоїдних функцій', 'FontSize', 14);
+legend('Location', 'northwest', 'FontSize', 11);
+grid on;
+xlim([-10 10]);
+ylim([-1.2 1.2]);
+hold off;
