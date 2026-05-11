@@ -1,0 +1,202 @@
+%% ===================================================
+%% Кластеризація FCM — без Fuzzy Logic Toolbox
+%% ===================================================
+
+rng(42);
+
+%% ----- 1. Генерація даних -----
+n_per = 50;
+data = [randn(n_per,2)*0.5 + [1 1];
+        randn(n_per,2)*0.5 + [4 4];
+        randn(n_per,2)*0.5 + [7 1]];
+
+%% ----- 2. Параметри FCM -----
+c       = 3;      % кількість кластерів
+m       = 2.0;    % ступінь нечіткості
+maxIter = 100;    % макс. ітерацій
+eps_thr = 1e-5;   % поріг збіжності
+
+%% ----- 3. FCM — власна реалізація -----
+[centers_fcm, U, obj_fcn] = my_fcm(data, c, m, maxIter, eps_thr);
+
+fprintf('\n===== FCM: Центри кластерів =====\n');
+for i = 1:c
+    fprintf('  Кластер %d: x = %.4f,  y = %.4f\n', ...
+            i, centers_fcm(i,1), centers_fcm(i,2));
+end
+fprintf('  Ітерацій виконано: %d\n', length(obj_fcn));
+fprintf('  Кінцеве значення J: %.4f\n', obj_fcn(end));
+
+%% ----- 4. Subtractive Clustering — власна реалізація -----
+ra = 0.5;
+[centers_sub] = my_subclust(data, ra);
+
+fprintf('\n===== Subtractive: Центри кластерів =====\n');
+for i = 1:size(centers_sub,1)
+    fprintf('  Кластер %d: x = %.4f,  y = %.4f\n', ...
+            i, centers_sub(i,1), centers_sub(i,2));
+end
+
+%% ----- 5. Визначення належності -----
+[~, clust_idx] = max(U, [], 1);   % для кожної точки — кластер з max U
+
+%% ----- 6. Графіки -----
+colors  = {'#378ADD', '#1D9E75', '#D85A30'};
+hex2rgb = @(h) sscanf(h(2:end),'%2x%2x%2x',[1 3])/255;
+markers = {'o','s','^'};
+
+figure('Name','Fuzzy Clustering (без Toolbox)', ...
+       'Color','white','Position',[80 80 1200 460]);
+
+% --- Графік 1: Кластери FCM ---
+subplot(1,3,1); hold on; grid on; box on;
+for i = 1:c
+    idx = clust_idx == i;
+    scatter(data(idx,1), data(idx,2), 40, ...
+            hex2rgb(colors{i}), markers{i}, ...
+            'DisplayName', sprintf('Кластер %d',i));
+end
+for i = 1:c
+    plot(centers_fcm(i,1), centers_fcm(i,2), 'k*', ...
+         'MarkerSize',14,'LineWidth',2,'HandleVisibility','off');
+    text(centers_fcm(i,1)+0.15, centers_fcm(i,2)+0.15, ...
+         sprintf('C%d (%.2f;%.2f)',i,centers_fcm(i,1),centers_fcm(i,2)),...
+         'FontSize',8);
+end
+xlabel('x_1'); ylabel('x_2');
+title('FCM — розподіл кластерів');
+legend('Location','northwest','FontSize',9);
+
+% --- Графік 2: Цільова функція ---
+subplot(1,3,2);
+plot(1:length(obj_fcn), obj_fcn, 'b-o', ...
+     'LineWidth',1.8,'MarkerSize',4,'MarkerFaceColor','b');
+xlabel('Ітерація'); ylabel('J — цільова функція');
+title('FCM — збіжність цільової функції');
+grid on; box on;
+
+% --- Графік 3: FCM vs Subtractive ---
+subplot(1,3,3);
+scatter(data(:,1),data(:,2),20,[0.75 0.75 0.75],'filled');
+hold on; grid on; box on;
+plot(centers_fcm(:,1),centers_fcm(:,2),'b*', ...
+     'MarkerSize',14,'LineWidth',2,'DisplayName','FCM центри');
+plot(centers_sub(:,1),centers_sub(:,2),'r^', ...
+     'MarkerSize',12,'LineWidth',2,'DisplayName','Subtractive центри');
+xlabel('x_1'); ylabel('x_2');
+title('Порівняння: FCM vs Subtractive');
+legend('Location','northwest','FontSize',9);
+
+sgtitle('Кластеризація методами нечіткої логіки',...
+        'FontSize',14,'FontWeight','bold');
+
+
+%% ===================================================
+%%  ЛОКАЛЬНІ ФУНКЦІЇ
+%% ===================================================
+
+function [centers, U, obj_history] = my_fcm(data, c, m, maxIter, eps_thr)
+% Fuzzy C-Means без Fuzzy Logic Toolbox
+    [N, ~] = size(data);
+
+    % Ініціалізація U випадковим чином з нормуванням по стовпцях
+    U = rand(c, N);
+    U = U ./ sum(U, 1);
+
+    obj_history = zeros(maxIter, 1);
+    centers     = zeros(c, size(data,2));
+
+    for iter = 1:maxIter
+
+        % Оновлення центрів
+        Um = U .^ m;                          % c x N
+        for ci = 1:c
+            centers(ci,:) = (Um(ci,:) * data) / sum(Um(ci,:));
+        end
+
+        % Обчислення відстаней: dist(ci, i) = ||x_i - v_ci||^2
+        dist = zeros(c, N);
+        for ci = 1:c
+            diff = data - centers(ci,:);
+            dist(ci,:) = sum(diff.^2, 2)';
+        end
+        dist = max(dist, 1e-10);   % уникаємо ділення на 0
+
+        % Цільова функція J
+        obj_history(iter) = sum(sum(Um .* dist));
+        fprintf('Iteration %3d:  J = %10.4f\n', iter, obj_history(iter));
+
+        % Оновлення U
+        U_new = zeros(c, N);
+        for ci = 1:c
+            ratio = dist(ci,:) ./ dist;       % c x N
+            U_new(ci,:) = 1 ./ sum(ratio .^ (1/(m-1)), 1);
+        end
+
+        % Перевірка збіжності
+        if max(abs(U_new(:) - U(:))) < eps_thr
+            obj_history = obj_history(1:iter);
+            U = U_new;
+            fprintf('Збіжність досягнута на ітерації %d\n', iter);
+            break
+        end
+        U = U_new;
+    end
+    obj_history = obj_history(obj_history > 0);
+end
+
+
+function centers = my_subclust(data, ra)
+% Субтрактивна кластеризація (спрощена версія)
+    rb      = 1.5 * ra;
+    eps_up  = 0.5;
+    eps_dn  = 0.15;
+
+    % Нормалізація даних у [0,1]
+    mn   = min(data);
+    mx   = max(data);
+    rng_ = mx - mn;
+    rng_(rng_ == 0) = 1;
+    X = (data - mn) ./ rng_;
+
+    N = size(X, 1);
+
+    % Потенціали точок
+    P = zeros(N,1);
+    for i = 1:N
+        d2 = sum((X - X(i,:)).^2, 2);
+        P(i) = sum(exp(-d2 / (ra/2)^2));
+    end
+
+    centers_norm = [];
+    P_first = max(P);
+
+    while true
+        [P_max, idx] = max(P);
+
+        % Умова прийняття першого центру
+        if isempty(centers_norm)
+            if P_max < eps_up * P_first, break; end
+            centers_norm(end+1,:) = X(idx,:);
+        else
+            % Відстань до найближчого центру
+            d_min = min(sqrt(sum((centers_norm - X(idx,:)).^2, 2)));
+            if (d_min/ra + P_max/P_first) >= 1
+                centers_norm(end+1,:) = X(idx,:);
+            elseif P_max < eps_dn * P_first
+                break;
+            else
+                P(idx) = 0;
+                continue;
+            end
+        end
+
+        % Зниження потенціалів навколо нового центру
+        d2 = sum((X - X(idx,:)).^2, 2);
+        P  = P - P_max * exp(-d2 / (rb/2)^2);
+        P  = max(P, 0);
+    end
+
+    % Денормалізація центрів
+    centers = centers_norm .* rng_ + mn;
+end
